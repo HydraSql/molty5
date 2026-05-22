@@ -116,8 +116,17 @@ class Heartbeat:
                 return
             raise
 
+        # Step 1b: GET /identity — used as a fallback by determine_state so
+        # that a registered identity is recognised even when /accounts/me
+        # readiness.erc8004Id has not yet been populated by the server.
+        identity_resp: dict | None = None
+        try:
+            identity_resp = await self.api.get_identity()
+        except APIError:
+            pass  # Non-fatal — determine_state will fall back gracefully
+
         # Step 2: Determine state
-        state, ctx = determine_state(me)
+        state, ctx = determine_state(me, identity_response=identity_resp)
         log.info("State: %s", state)
 
         # Feed dashboard with account info — use CONSISTENT key

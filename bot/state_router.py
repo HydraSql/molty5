@@ -15,10 +15,16 @@ READY_FREE = "READY_FREE"
 ERROR = "ERROR"
 
 
-def determine_state(me_response: dict) -> tuple[str, dict]:
+def determine_state(me_response: dict, identity_response: dict | None = None) -> tuple[str, dict]:
     """
     Analyze /accounts/me response → return (state, context).
     Context contains relevant data for the next step.
+
+    identity_response: optional result of GET /identity (same source as
+    setup.identity.ensure_identity).  Used as a fallback when
+    readiness.erc8004Id is absent from /accounts/me — fixes the mismatch
+    where the identity registry is already populated but /accounts/me has
+    not yet reflected it.
     """
     readiness = me_response.get("readiness", {})
     current_games = me_response.get("currentGames", [])
@@ -36,8 +42,18 @@ def determine_state(me_response: dict) -> tuple[str, dict]:
                 "is_alive": game.get("isAlive", True),
             }
 
-    # Check ERC-8004 identity
+    # Check ERC-8004 identity — prefer /accounts/me readiness field, but
+    # fall back to the dedicated GET /identity response when the field is
+    # absent.  This prevents a state mismatch where setup.identity already
+    # confirmed registration but /accounts/me still returns erc8004Id=null.
     erc8004_id = readiness.get("erc8004Id")
+    if erc8004_id is None and identity_response is not None:
+        erc8004_id = identity_response.get("erc8004Id")
+        if erc8004_id is not None:
+            log.info(
+                "erc8004Id absent in /accounts/me readiness; "
+                "using GET /identity fallback: tokenId=%s", erc8004_id
+            )
     if erc8004_id is None:
         log.info("No ERC-8004 identity registered")
         return NO_IDENTITY, {}
